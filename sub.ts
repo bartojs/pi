@@ -20,7 +20,6 @@ const { spawn } = require("child_process") as any;
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { applyExtensionDefaults } from "./themeMap.ts";
 
 interface SubState {
 	id: number;
@@ -32,6 +31,8 @@ interface SubState {
 	sessionFile: string;   // persistent JSONL session path — used by /subcont to resume
 	turnCount: number;     // increments each time /subcont continues this agent
 	proc?: any;            // active ChildProcess ref (for kill on /subrm)
+    provider: string;
+    model: string;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -134,10 +135,14 @@ export default function (pi: ExtensionAPI) {
 		prompt: string,
 		ctx: any,
 	): Promise<void> {
-		const model = ctx.model
-			? `${ctx.model.provider}/${ctx.model.id}`
-			: "openrouter/google/gemini-3-flash-preview";
-
+        if (!state.provider || !state.model) {
+            if (!ctx.model) {
+                throw "no model";
+            }
+            state.provider = ctx.model.provider;
+            state.model = ctx.model.id;
+        }
+		const model = `${state.provider}/${state.model}`;
 		return new Promise<void>((resolve) => {
 			const proc = spawn("pi", [
 				"--mode", "json",
@@ -195,7 +200,7 @@ export default function (pi: ExtensionAPI) {
 
 				pi.sendMessage({
 					customType: "subagent-result",
-					content: `Subagent #${state.id}${state.turnCount > 1 ? ` (Turn ${state.turnCount})` : ""} finished "${prompt}" in ${Math.round(state.elapsed / 1000)}s.\n\nResult:\n${result.slice(0, 8000)}${result.length > 8000 ? "\n\n... [truncated]" : ""}`,
+					content: `Subagent ${state.provider}/${state.model} #${state.id}${state.turnCount > 1 ? ` (Turn ${state.turnCount})` : ""} finished "${prompt}" in ${Math.round(state.elapsed / 1000)}s.\n\nResult:\n${result.slice(0, 8000)}${result.length > 8000 ? "\n\n... [truncated]" : ""}`,
 					display: true,
 				}, { deliverAs: "followUp", triggerTurn: true });
 
@@ -328,15 +333,24 @@ export default function (pi: ExtensionAPI) {
 	// ── /sub <task> ───────────────────────────────────────────────────────────
 
 	pi.registerCommand("sub", {
-		description: "Spawn a subagent with live widget: /sub <task>",
+		description: "Spawn a subagent with live widget: /sub [provider/model:]<task>",
 		handler: async (args, ctx) => {
 			widgetCtx = ctx;
 
-			const task = args?.trim();
+			let task = args?.trim();
 			if (!task) {
-				ctx.ui.notify("Usage: /sub <task>", "error");
+				ctx.ui.notify("Usage: /sub [provider/model:]<task>", "error");
 				return;
 			}
+
+            let provider = '';
+            let model = '';
+            if (task.includes(':')) {
+                const [first,last] = task.split(':');
+                provider = first.split('/')[0];
+                model = first.split('/')[1];
+                task = last; 
+            }
 
 			const id = nextId++;
 			const state: SubState = {
@@ -348,6 +362,8 @@ export default function (pi: ExtensionAPI) {
 				elapsed: 0,
 				sessionFile: makeSessionFile(id),
 				turnCount: 1,
+                provider,
+                model
 			};
 			agents.set(id, state);
 			updateWidgets();
@@ -467,7 +483,6 @@ export default function (pi: ExtensionAPI) {
 	// ── Session lifecycle ─────────────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		applyExtensionDefaults(import.meta.url, ctx);
 		for (const [id, state] of Array.from(agents.entries())) {
 			if (state.proc && state.status === "running") {
 				state.proc.kill("SIGTERM");
