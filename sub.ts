@@ -337,23 +337,22 @@ export default function (pi: ExtensionAPI) {
 	// ── /sub <task> ───────────────────────────────────────────────────────────
 
 	pi.registerCommand("sub", {
-		description: "Spawn a subagent with live widget: /sub [provider/model:]<task>",
-		handler: async (args, ctx) => {
+		description: "Spawn a subagent with live widget: /sub [provider/model] <task>",
+		handler: async (args?:string, ctx) => {
 			widgetCtx = ctx;
 
-			let task = args?.trim();
+            let task = (args ?? '').trim();
 			if (!task) {
-				ctx.ui.notify("Usage: /sub [provider/model:]<task>", "error");
+				ctx.ui.notify("Usage: /sub [@provider/model] <task>", "error");
 				return;
 			}
 
             let provider = '';
             let model = '';
-            if (task.includes(':')) {
-                const [first,last] = task.split(':');
-                provider = first.split('/')[0];
-                model = first.split('/')[1];
-                task = last; 
+            const [first, ...rest] = trim.split(' ');
+            if (first.startsWith('@') && first.includes('/')) {
+                [provider, model] = first.replace(/^@/,'').split('/');
+                task = rest.join(' ');
             }
 
 			const id = nextId++;
