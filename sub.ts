@@ -222,9 +222,11 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerTool({
 		name: "subagent_create",
-		description: "Spawn a background subagent to perform a task. Returns the subagent ID immediately while it runs in the background. Results will be delivered as a follow-up message when finished.",
+		description: "Spawn a background subagent to perform a task. Optional provider/model. Returns the subagent ID immediately while it runs in the background. Results will be delivered as a follow-up message when finished.",
 		parameters: Type.Object({
 			task: Type.String({ description: "The complete task description for the subagent to perform" }),
+			provider: Type.Optional(Type.String({ description: "model provider" })),
+			model: Type.Optional(Type.String({ description: "model id" })),
 		}),
 		execute: async (callId, args, _signal, _onUpdate, ctx) => {
 			widgetCtx = ctx;
@@ -238,6 +240,8 @@ export default function (pi: ExtensionAPI) {
 				elapsed: 0,
 				sessionFile: makeSessionFile(id),
 				turnCount: 1,
+                provider: args.provider ?? ctx.model?.provider ?? '',
+                model: args.model ?? ctx.model?.id ?? '',
 			};
 			agents.set(id, state);
 			updateWidgets();
